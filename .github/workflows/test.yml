@@ -23,6 +23,8 @@ jobs:
           ZOTERO_KEY: ${{ secrets.ZOTERO_KEY }}
           ZOTERO_IGNORE: ${{ vars.ZOTERO_IGNORE }}
           ARXIV_QUERY: ${{ secrets.ARXIV_QUERY }}
+          SEARCH_KEYWORDS: ${{ secrets.SEARCH_KEYWORDS }}
+          SEARCH_MAX_RESULTS: ${{ secrets.SEARCH_MAX_RESULTS }}
           SEND_EMPTY: ${{ vars.SEND_EMPTY }}
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
