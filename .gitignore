@@ -15,3 +15,8 @@ test.ipynb
 logs
 models
 test-compose.yml
+
+# Local test
+test_config.py
+setup_env.sh
+test_local.py

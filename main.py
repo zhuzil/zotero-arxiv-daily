@@ -15,6 +15,8 @@ from tempfile import mkstemp
 from paper import ArxivPaper
 from llm import set_global_llm
 import feedparser
+from datetime import datetime, timedelta
+import re
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
     zot = zotero.Zotero(id, 'user', key)
@@ -46,8 +48,51 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
     return new_corpus
 
 
-def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
+def get_arxiv_paper(query:str, debug:bool=False, search_keywords:str=None, search_max_results:int=50) -> list[ArxivPaper]:
     client = arxiv.Client(num_retries=10,delay_seconds=10)
+    
+    # 如果提供了关键词，使用关键词搜索模式
+    if search_keywords:
+        logger.info(f"Searching arxiv papers using keywords: {search_keywords}")
+        keywords = [kw.strip() for kw in search_keywords.split(',')]
+        papers = []
+        
+        # 计算日期阈值（最近2天）
+        cutoff_date = datetime.now().date() - timedelta(days=2)
+        logger.info(f"Only including papers published after: {cutoff_date}")
+        
+        for keyword in keywords:
+            if not keyword:
+                continue
+            logger.info(f"Searching for keyword: {keyword}")
+            search = arxiv.Search(
+                query=keyword,
+                max_results=search_max_results,
+                sort_by=arxiv.SortCriterion.SubmittedDate
+            )
+            keyword_papers = []
+            for paper in client.results(search):
+                # 检查论文发布日期是否在最近2天内
+                paper_date = paper.published.date()
+                if paper_date >= cutoff_date:
+                    keyword_papers.append(ArxivPaper(paper))
+                else:
+                    logger.debug(f"Paper {paper.get_short_id()} published on {paper_date} is too old, skipping")
+            papers.extend(keyword_papers)
+            logger.info(f"Found {len(keyword_papers)} recent papers for keyword '{keyword}'")
+        
+        # 去重（基于arxiv_id）
+        seen_ids = set()
+        unique_papers = []
+        for paper in papers:
+            if paper.arxiv_id not in seen_ids:
+                seen_ids.add(paper.arxiv_id)
+                unique_papers.append(paper)
+        
+        logger.info(f"Total unique papers found within last 2 days: {len(unique_papers)}")
+        return unique_papers
+    
+    # 原有的RSS订阅逻辑
     feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
     if 'Feed error for query' in feed.feed.title:
         raise Exception(f"Invalid ARXIV_QUERY: {query}.")
@@ -106,6 +151,8 @@ if __name__ == '__main__':
     add_argument('--send_empty', type=bool, help='If get no arxiv paper, send empty email',default=False)
     add_argument('--max_paper_num', type=int, help='Maximum number of papers to recommend',default=100)
     add_argument('--arxiv_query', type=str, help='Arxiv search query')
+    add_argument('--search_keywords', type=str, help='Keywords to search for arxiv papers directly (comma-separated)',default=None)
+    add_argument('--search_max_results', type=int, help='Maximum number of papers to search for each keyword',default=50)
     add_argument('--smtp_server', type=str, help='SMTP server')
     add_argument('--smtp_port', type=int, help='SMTP port')
     add_argument('--sender', type=str, help='Sender email address')
@@ -162,7 +209,7 @@ if __name__ == '__main__':
         corpus = filter_corpus(corpus, args.zotero_ignore)
         logger.info(f"Remaining {len(corpus)} papers after filtering.")
     logger.info("Retrieving Arxiv papers...")
-    papers = get_arxiv_paper(args.arxiv_query, args.debug)
+    papers = get_arxiv_paper(args.arxiv_query, args.debug, args.search_keywords, args.search_max_results)
     if len(papers) == 0:
         logger.info("No new papers found. Yesterday maybe a holiday and no one submit their work :). If this is not the case, please check the ARXIV_QUERY.")
         if not args.send_empty:
